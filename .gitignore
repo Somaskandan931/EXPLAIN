@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Data
+data/
+!data/sample/
+preprocessing/processed_data
+# Models
+model/model-training/models/**
+!models/lora/**
+model/evaluation/results
+
+# Logs & outputs
+outputs/
+logs/
+checkpoints/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store

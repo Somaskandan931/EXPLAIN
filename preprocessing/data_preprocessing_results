@@ -1,0 +1,83 @@
+C:\Users\somas\anaconda3\python.exe C:\Users\somas\PycharmProjects\EXPLAIN\preprocessing\data_preprocessing.py
+======================================================================
+PHASE 2: PREPROCESSING COMBINED DATASET
+======================================================================
+✓ Loaded dataset: (86667, 3)
+
+🔹 Cleaning text...
+100%|██████████| 86667/86667 [00:02<00:00, 37485.18it/s]
+  0%|          | 0/86662 [00:00<?, ?it/s]✓ After cleaning: (86662, 4)
+
+🔹 Detecting script...
+100%|██████████| 86662/86662 [00:00<00:00, 179688.47it/s]
+
+🔹 Detecting language...
+100%|██████████| 86662/86662 [10:17<00:00, 140.28it/s]
+
+🔹 Assigning model routes...
+
+✅ Saved preprocessed dataset: C:/Users/somas/PycharmProjects/EXPLAIN/preprocessing/processed_data/combined_preprocessed.csv
+
+📊 Language distribution:
+language
+en         68681
+ta          4737
+hi          4175
+ml          2723
+gu          2203
+bn           993
+pa           941
+id           466
+unknown      254
+ca           155
+es           151
+fr           137
+it           102
+af            95
+da            94
+nl            93
+de            87
+et            85
+te            84
+ne            79
+tl            74
+sv            69
+no            45
+ro            28
+so            23
+pt            23
+hr            17
+mr            13
+fi            11
+sw             6
+cy             4
+sl             4
+sq             4
+lv             2
+sk             1
+tr             1
+cs             1
+vi             1
+Name: count, dtype: int64
+
+📊 Routing distribution:
+route
+xlmr              68681
+translate_xlmr    13806
+indicbert          4175
+Name: count, dtype: int64
+
+📊 Source distribution:
+source
+IFND                  56709
+BharatFakeNewsKosh    26232
+FakeReal               3721
+Name: count, dtype: int64
+
+📊 Label distribution:
+label
+0    49966
+1    36696
+Name: count, dtype: int64
+
+Process finished with exit code 0
