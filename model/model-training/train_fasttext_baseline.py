@@ -1,101 +1,141 @@
-# train_fasttext_baseline.py
-# ==========================
-
 import os
-import pandas as pd
-import numpy as np
 import fasttext
+import fasttext.util
+import numpy as np
+import pandas as pd
+
+from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 
-# -----------------------
-# Step 1: Load dataset
-# -----------------------
-DATA_PATH = (
-    "C:/Users/somas/PycharmProjects/EXPLAIN/"
-    "preprocessing/processed_data/combined_preprocessed.csv"
-)
 
-df = pd.read_csv(DATA_PATH)
-print(f"✓ Loaded dataset: {df.shape}")
+# ===============================
+# CONFIG
+# ===============================
+FASTTEXT_DIR = "models/fasttext"
+DATA_DIR = "data"
 
-required_cols = {"text", "label", "language"}
-if not required_cols.issubset(df.columns):
-    raise ValueError(f"CSV must contain {required_cols}")
+TRAIN_FILE = os.path.join(DATA_DIR, "train.csv")
+TEST_FILE = os.path.join(DATA_DIR, "test.csv")
 
-texts = df["text"].astype(str).tolist()
-labels = df["label"].astype(int).tolist()
-languages = df["language"].astype(str).tolist()
-
-# -----------------------
-# Step 2: Load FastText models
-# -----------------------
-print("🔹 Loading FastText models...")
-
-FT_MODEL_DIR = "C:/Users/somas/PycharmProjects/EXPLAIN/models/"
-
-EN_MODEL_PATH = os.path.join(FT_MODEL_DIR, "cc.en.300.bin")
-HI_MODEL_PATH = os.path.join(FT_MODEL_DIR, "cc.hi.300.bin")
-
-# Fail fast if models are missing
-if not os.path.exists(EN_MODEL_PATH):
-    raise FileNotFoundError(f"Missing FastText model: {EN_MODEL_PATH}")
-
-if not os.path.exists(HI_MODEL_PATH):
-    raise FileNotFoundError(f"Missing FastText model: {HI_MODEL_PATH}")
-
-ft_models = {
-    "en": fasttext.load_model(EN_MODEL_PATH),
-    "hi": fasttext.load_model(HI_MODEL_PATH),
+LANG_MODELS = {
+    "en": "cc.en.300.bin",
+    "hi": "cc.hi.300.bin"
 }
 
-print("✅ FastText models loaded: en, hi")
+REDUCED_DIM = 100   # IMPORTANT: reduces RAM usage
 
-# -----------------------
-# Step 3: Text → Embedding
-# -----------------------
-def get_embedding(text, lang):
-    # Fallback to English for unsupported languages
-    ft = ft_models.get(lang, ft_models["en"])
 
-    words = text.split()
-    if not words:
-        return np.zeros(ft.get_dimension())
+# ===============================
+# SETUP
+# ===============================
+os.makedirs(FASTTEXT_DIR, exist_ok=True)
+os.chdir(FASTTEXT_DIR)
 
-    return np.mean([ft.get_word_vector(w) for w in words], axis=0)
+print("Working directory:", os.getcwd())
 
-print("🔹 Converting texts to FastText embeddings...")
-X = np.array([get_embedding(t, l) for t, l in zip(texts, languages)])
-y = np.array(labels)
-print("✅ Embedding generation completed")
 
-# -----------------------
-# Step 4: Train–Test split
-# -----------------------
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+# ===============================
+# DOWNLOAD MODELS (ONE-TIME)
+# ===============================
+print("Downloading FastText models (only if not present)...")
 
-print(f"🔹 Train size: {len(X_train)} | Test size: {len(X_test)}")
+for lang in LANG_MODELS:
+    fasttext.util.download_model(lang, if_exists="ignore")
 
-# -----------------------
-# Step 5: Train classifier
-# -----------------------
-print("🔹 Training Logistic Regression classifier...")
+print("FastText models downloaded")
+
+
+# ===============================
+# LOAD & REDUCE MODELS
+# ===============================
+print("Loading and reducing FastText models...")
+
+models = {}
+
+for lang, model_name in LANG_MODELS.items():
+    if not os.path.exists(model_name.replace(".300.", ".100.")):
+        fasttext.util.reduce_model(model_name, REDUCED_DIM)
+
+    reduced_model = model_name.replace(".300.", ".100.")
+    models[lang] = fasttext.load_model(reduced_model)
+
+print("Models ready")
+
+
+# ===============================
+# HELPER FUNCTIONS
+# ===============================
+def detect_language(text):
+    """Very lightweight heuristic"""
+    if any('\u0900' <= ch <= '\u097F' for ch in text):
+        return "hi"
+    return "en"
+
+
+def sentence_embedding(text):
+    lang = detect_language(text)
+    model = models[lang]
+
+    words = text.lower().split()
+    vectors = [model.get_word_vector(w) for w in words if w.strip()]
+
+    if len(vectors) == 0:
+        return np.zeros(REDUCED_DIM)
+
+    return np.mean(vectors, axis=0)
+
+
+# ===============================
+# LOAD DATA
+# ===============================
+print("Loading dataset...")
+
+train_df = pd.read_csv(os.path.join("..", "..", TRAIN_FILE))
+test_df = pd.read_csv(os.path.join("..", "..", TEST_FILE))
+
+print("Train size:", len(train_df))
+print("Test size:", len(test_df))
+
+
+# ===============================
+# VECTORIZE
+# ===============================
+print("Generating sentence embeddings...")
+
+X_train = np.vstack([
+    sentence_embedding(text)
+    for text in tqdm(train_df["text"])
+])
+
+X_test = np.vstack([
+    sentence_embedding(text)
+    for text in tqdm(test_df["text"])
+])
+
+y_train = train_df["label"].values
+y_test = test_df["label"].values
+
+
+# ===============================
+# TRAIN CLASSIFIER
+# ===============================
+print("Training Logistic Regression...")
+
 clf = LogisticRegression(
     max_iter=1000,
-    n_jobs=-1,
-    solver="lbfgs"
+    n_jobs=-1
 )
-clf.fit(X_train, y_train)
-print("✅ Training completed")
 
-# -----------------------
-# Step 6: Evaluation
-# -----------------------
+clf.fit(X_train, y_train)
+
+
+# ===============================
+# EVALUATION
+# ===============================
+print("Evaluating model...")
+
 y_pred = clf.predict(X_test)
 
-print("\n📊 Accuracy:", accuracy_score(y_test, y_pred))
-print("\n📊 Classification Report:\n")
+print("Accuracy:", accuracy_score(y_test, y_pred))
 print(classification_report(y_test, y_pred))
