@@ -6,12 +6,9 @@ BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR / "models"
 DATA_DIR = BASE_DIR / "data"
 
-# Model paths
+# Model paths (Transformer models only)
 XLMR_MODEL_PATH = MODELS_DIR / "xlmr_model"
 INDIC_MODEL_PATH = MODELS_DIR / "indicbert_model"
-TFIDF_MODEL_PATH = MODELS_DIR / "tfidf_model.pkl"
-TFIDF_VECTORIZER_PATH = MODELS_DIR / "tfidf_vectorizer.pkl"
-TFIDF_TRAIN_DATA_PATH = DATA_DIR / "tfidf_train_data.pkl"
 
 # API Configuration
 API_HOST = "0.0.0.0"

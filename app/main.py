@@ -7,7 +7,6 @@ import logging
 import config
 from model_loader import ModelLoader, check_model_files
 from explainability.unified_explainer import UnifiedExplainer
-from explainability.tfidf_explainer import TFIDFExplainer
 
 # Setup logging
 logging.basicConfig( level=logging.INFO )
@@ -15,8 +14,8 @@ logger = logging.getLogger( __name__ )
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Fake News Detection API",
-    description="Explainable fake news detection system with multiple models",
+    title="Multilingual Fake News Detection API",
+    description="Explainable fake news detection using XLM-RoBERTa and IndicBERT",
     version="1.0.0"
 )
 
@@ -33,7 +32,7 @@ app.add_middleware(
 # Pydantic models
 class InputText( BaseModel ) :
     text: str
-    model: str  # "xlmr", "indicbert", or "tfidf"
+    model: str  # "xlmr" or "indicbert"
 
 
 class PredictionResponse( BaseModel ) :
@@ -67,19 +66,12 @@ async def startup_event () :
         loader = ModelLoader( config )
         models = loader.load_all_models()
 
-        # Create TF-IDF explainer wrapper
-        tfidf_explainer = TFIDFExplainer(
-            models['tfidf_model'],
-            models['tfidf_vectorizer']
-        )
-
         # Initialize unified explainer
         explainer = UnifiedExplainer(
             xlmr_model=models['xlmr_model'],
             xlmr_tokenizer=models['xlmr_tokenizer'],
             indic_model=models['indic_model'],
-            indic_tokenizer=models['indic_tokenizer'],
-            tfidf_explainer=tfidf_explainer
+            indic_tokenizer=models['indic_tokenizer']
         )
 
         models_loaded = True
@@ -94,10 +86,11 @@ async def startup_event () :
 async def root () :
     """Root endpoint"""
     return {
-        "message" : "Fake News Detection API",
+        "message" : "Multilingual Fake News Detection API",
         "status" : "running",
         "models_loaded" : models_loaded,
-        "available_models" : ["xlmr", "indicbert", "tfidf"]
+        "available_models" : ["xlmr", "indicbert"],
+        "description" : "XLM-RoBERTa and IndicBERT for multilingual fake news detection"
     }
 
 
@@ -106,7 +99,11 @@ async def health_check () :
     """Health check endpoint"""
     return {
         "status" : "healthy" if models_loaded else "models_not_loaded",
-        "models_loaded" : models_loaded
+        "models_loaded" : models_loaded,
+        "available_models" : {
+            "xlmr" : models_loaded,
+            "indicbert" : models_loaded
+        }
     }
 
 
@@ -129,7 +126,7 @@ async def predict ( input_data: InputText ) :
 
     try :
         # Validate model name
-        valid_models = ["xlmr", "indicbert", "tfidf"]
+        valid_models = ["xlmr", "indicbert"]
         if input_data.model not in valid_models :
             raise HTTPException(
                 status_code=400,
@@ -167,22 +164,63 @@ async def batch_predict ( texts: list[str], model: str = "xlmr" ) :
             detail="Models not loaded"
         )
 
+    # Validate model
+    valid_models = ["xlmr", "indicbert"]
+    if model not in valid_models :
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Choose from: {valid_models}"
+        )
+
     results = []
     for text in texts :
         try :
             explanation = explainer.explain( text, model )
+            prediction_label = "Fake" if explanation['prediction'] == 1 else "Real"
             results.append( {
-                "text" : text[:100] + "...",
-                "prediction" : explanation['prediction'],
+                "text" : text[:100] + "..." if len( text ) > 100 else text,
+                "prediction" : prediction_label,
                 "confidence" : explanation['confidence']
             } )
         except Exception as e :
             results.append( {
-                "text" : text[:100] + "...",
+                "text" : text[:100] + "..." if len( text ) > 100 else text,
                 "error" : str( e )
             } )
 
-    return {"results" : results}
+    return {"results" : results, "model_used" : model}
+
+
+@app.get( "/models" )
+async def get_models_info () :
+    """Get information about available models"""
+    return {
+        "models" : [
+            {
+                "name" : "xlmr",
+                "full_name" : "XLM-RoBERTa",
+                "description" : "Cross-lingual RoBERTa model trained on 100+ languages",
+                "strengths" : [
+                    "Excellent multilingual performance",
+                    "Strong on code-mixed content (Hinglish)",
+                    "Robust cross-lingual transfer"
+                ],
+                "languages" : "100+ including English, Hindi, and regional Indian languages"
+            },
+            {
+                "name" : "indicbert",
+                "full_name" : "IndicBERT",
+                "description" : "BERT model specialized for Indian languages",
+                "strengths" : [
+                    "Optimized for 12 major Indian languages",
+                    "Better performance on Hindi and regional content",
+                    "Trained on Indic language corpora"
+                ],
+                "languages" : "12 major Indian languages including Hindi, Bengali, Tamil, Telugu"
+            }
+        ],
+        "loaded" : models_loaded
+    }
 
 
 if __name__ == "__main__" :
