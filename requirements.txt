@@ -1,31 +1,41 @@
-# Core ML/DL frameworks
-torch>=2.0.0
-transformers>=4.30.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
+# Core ML/DL
+torch
+transformers
+peft
+accelerate
+tokenizers # pinned for IndicBERT + Windows
+
+# API
+fastapi
+uvicorn
+pydantic
+
+# UI
+streamlit
+plotly
+matplotlib
+seaborn
 
 # Explainability
-captum>=0.6.0
-shap>=0.42.0
+captum
 
-# LoRA/PEFT for continual learning
-peft>=0.5.0
+# Data & Storage
+pandas
+numpy
+pymongo
 
-# API Framework
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
+# News & Web
+requests
+beautifulsoup4
 
-# Frontend
-streamlit>=1.25.0
+# Utils
+python-dotenv
+scikit-learn
+langdetect
+python-dateutil
+tqdm
+datasets
+fasttext-wheel
+shap
+huggingface-hub
 
-# Database
-pymongo>=4.5.0
-
-# Utilities
-requests>=2.31.0
-pandas>=2.0.0
-python-dotenv>=1.0.0
-
-# Optional: For CUDA support
-# Install manually: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118

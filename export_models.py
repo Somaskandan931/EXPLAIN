@@ -6,7 +6,7 @@ Run this script to save your XLM-RoBERTa and IndicBERT models after training
 from pathlib import Path
 
 # Create models directory if it doesn't exist
-MODELS_DIR = Path("models")
+MODELS_DIR = Path( "app/models" )
 MODELS_DIR.mkdir(exist_ok=True)
 
 print("="*60)

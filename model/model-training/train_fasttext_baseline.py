@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score, classification_report
 # ===============================
 # CONFIG
 # ===============================
-FASTTEXT_DIR = "models/fasttext"
+FASTTEXT_DIR = "../../app/models/fasttext"
 DATA_DIR = "data"
 
 TRAIN_FILE = os.path.join(DATA_DIR, "train.csv")

@@ -12,7 +12,7 @@ import evaluate
 MODEL_NAME = "xlm-roberta-base"
 
 DATA_DIR = "/content/tokenized/xlmr"   # Colab
-OUTPUT_DIR = "./models/xlmr_lora"
+OUTPUT_DIR = "../../app/models/xlmr_lora"
 NUM_LABELS = 2
 
 # ===== METRIC =====

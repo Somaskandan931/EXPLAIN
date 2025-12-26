@@ -4,12 +4,17 @@ __pycache__/
 .env
 
 # Data
-data/
+data/bharatfakenewskosh (3).xlsx.zip
+data/IFND.csv.zip
+data/news_dataset.csv.zip
+data/bharatfakenewskosh.csv
+data/IFND.csv
+data/news_dataset.csv
 !data/sample/
 preprocessing/processed_data
 # Models
-model/model-training/models/**
-!models/lora/**
+app/models/**
+!app/models/lora/**
 model/evaluation/results
 
 # Logs & outputs

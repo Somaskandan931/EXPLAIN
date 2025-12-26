@@ -1,25 +1,39 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
 import logging
+import threading
+from langdetect import detect
 
-# Import configuration and utilities
-import config
+# Project imports
+from app import config
 from model_loader import ModelLoader, check_model_files
 from explainability.unified_explainer import UnifiedExplainer
 
-# Setup logging
-logging.basicConfig( level=logging.INFO )
+# --------------------------------------------------
+# Logging Configuration
+# --------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger( __name__ )
 
-# Initialize FastAPI
+# --------------------------------------------------
+# FastAPI Application
+# --------------------------------------------------
 app = FastAPI(
     title="Multilingual Fake News Detection API",
-    description="Explainable fake news detection using XLM-RoBERTa and IndicBERT",
-    version="1.0.0"
+    description="Explainable fake news detection using XLM-RoBERTa and IndicBERT with ensemble capabilities",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
-# Add CORS middleware
+# --------------------------------------------------
+# CORS Middleware
+# --------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,206 +43,359 @@ app.add_middleware(
 )
 
 
-# Pydantic models
+# --------------------------------------------------
+# Request/Response Models
+# --------------------------------------------------
 class InputText( BaseModel ) :
     text: str
-    model: str  # "xlmr" or "indicbert"
+    model: Optional[str] = None
 
 
 class PredictionResponse( BaseModel ) :
-    prediction: int
+    label: str
+    confidence: float
+    model: str
+    explanations: Dict[str, Any]
+
+
+class EnsemblePredictionResponse( BaseModel ) :
+    label: str
     confidence: float
     method: str
-    tokens: list
+    details: Dict[str, Any]
 
 
-# Global variables for models
-explainer = None
-models_loaded = False
+class HealthResponse( BaseModel ) :
+    status: str
+    models_loaded: bool
 
 
-@app.on_event( "startup" )
-async def startup_event () :
-    """Load models on startup"""
-    global explainer, models_loaded
+class RootResponse( BaseModel ) :
+    status: str
+    models_loaded: bool
+    available_models: list
+    version: str
 
-    try :
-        logger.info( "Starting model loading..." )
 
-        # Check if model files exist
-        files_exist, message = check_model_files( config )
-        if not files_exist :
-            logger.error( message )
-            logger.warning( "API will start but predictions will fail until models are available" )
+# --------------------------------------------------
+# Global Variables
+# --------------------------------------------------
+explainer: Optional[UnifiedExplainer] = None
+models_loaded: bool = False
+loading_lock = threading.Lock()
+loading_error: Optional[str] = None
+
+
+# --------------------------------------------------
+# Model Loading Function (Thread-safe)
+# --------------------------------------------------
+def load_models () :
+    """Load ML models in background with error handling"""
+    global explainer, models_loaded, loading_error
+
+    with loading_lock :
+        if models_loaded :
             return
 
-        # Load all models
-        loader = ModelLoader( config )
-        models = loader.load_all_models()
+        try :
+            logger.info( "🚀 Background ML model loading started..." )
 
-        # Initialize unified explainer
-        explainer = UnifiedExplainer(
-            xlmr_model=models['xlmr_model'],
-            xlmr_tokenizer=models['xlmr_tokenizer'],
-            indic_model=models['indic_model'],
-            indic_tokenizer=models['indic_tokenizer']
-        )
+            # Check if model files exist
+            files_exist, message = check_model_files( config )
+            if not files_exist :
+                loading_error = message
+                logger.error( f"❌ {message}" )
+                return
 
-        models_loaded = True
-        logger.info( "✓ All models loaded successfully!" )
+            # Load models
+            loader = ModelLoader( config )
+            models = loader.load_all_models()
 
+            # Initialize explainer
+            explainer = UnifiedExplainer(
+                xlmr_model=models["xlmr_model"],
+                xlmr_tokenizer=models["xlmr_tokenizer"],
+                indic_model=models["indic_model"],
+                indic_tokenizer=models["indic_tokenizer"],
+            )
+
+            models_loaded = True
+            logger.info( "✅ ML models loaded successfully" )
+
+        except Exception as e :
+            loading_error = str( e )
+            logger.exception( f"❌ Error loading models: {e}" )
+
+
+# --------------------------------------------------
+# Startup Event
+# --------------------------------------------------
+@app.on_event( "startup" )
+def startup_event () :
+    """Initialize model loading on startup"""
+    threading.Thread( target=load_models, daemon=True ).start()
+    logger.info( "⚡ Model loading initiated in background" )
+
+
+# --------------------------------------------------
+# Middleware: Request Logging
+# --------------------------------------------------
+@app.middleware( "http" )
+async def log_requests ( request, call_next ) :
+    """Log all incoming requests"""
+    logger.info( f"➡️ {request.method} {request.url.path}" )
+    response = await call_next( request )
+    logger.info( f"✅ {request.method} {request.url.path} - Status: {response.status_code}" )
+    return response
+
+
+# --------------------------------------------------
+# Utility Functions
+# --------------------------------------------------
+def auto_select_model ( text: str ) -> str :
+    """Auto-detect language and select appropriate model"""
+    try :
+        lang = detect( text )
+        logger.info( f"Detected language: {lang}" )
+
+        # European languages -> XLM-RoBERTa
+        european_langs = ["en", "fr", "de", "es", "it", "pt", "nl", "pl", "ru"]
+
+        return "xlmr" if lang in european_langs else "indicbert"
     except Exception as e :
-        logger.error( f"Failed to load models: {e}" )
-        logger.warning( "API will start but predictions will fail until models are loaded" )
+        logger.warning( f"Language detection failed: {e}. Defaulting to xlmr" )
+        return "xlmr"
 
 
-@app.get( "/" )
-async def root () :
-    """Root endpoint"""
+# --------------------------------------------------
+# API Routes
+# --------------------------------------------------
+
+@app.get( "/", response_model=RootResponse )
+def root () :
+    """Root endpoint with API information"""
     return {
-        "message" : "Multilingual Fake News Detection API",
         "status" : "running",
         "models_loaded" : models_loaded,
-        "available_models" : ["xlmr", "indicbert"],
-        "description" : "XLM-RoBERTa and IndicBERT for multilingual fake news detection"
+        "available_models" : ["xlmr", "indicbert", "ensemble"],
+        "version" : "2.0.0"
     }
 
 
-@app.get( "/health" )
-async def health_check () :
+@app.get( "/health", response_model=HealthResponse )
+def health () :
     """Health check endpoint"""
+    if loading_error and not models_loaded :
+        raise HTTPException(
+            status_code=503,
+            detail=f"Model loading failed: {loading_error}"
+        )
+
     return {
-        "status" : "healthy" if models_loaded else "models_not_loaded",
-        "models_loaded" : models_loaded,
-        "available_models" : {
-            "xlmr" : models_loaded,
-            "indicbert" : models_loaded
-        }
+        "status" : "healthy" if models_loaded else "loading",
+        "models_loaded" : models_loaded
     }
 
 
 @app.post( "/predict", response_model=PredictionResponse )
-async def predict ( input_data: InputText ) :
+def predict ( data: InputText ) :
     """
-    Predict whether text is fake news
+    Predict if news is fake or real using single model
 
     Args:
-        input_data: InputText object with text and model name
+        data: InputText containing text and optional model selection
 
     Returns:
-        PredictionResponse with prediction, confidence, and explanation
+        PredictionResponse with label, confidence, model, and explanations
     """
+    global explainer
+
+    # Ensure models are loaded
     if not models_loaded :
+        load_models()
+
+    if not explainer :
         raise HTTPException(
             status_code=503,
-            detail="Models not loaded. Please check server logs and ensure model files are available."
+            detail="Models not loaded yet. Please try again in a few moments."
+        )
+
+    # Validate input
+    if not data.text.strip() :
+        raise HTTPException(
+            status_code=400,
+            detail="Text input cannot be empty"
+        )
+
+    # Select model
+    model_name = data.model or auto_select_model( data.text )
+
+    if model_name not in ["xlmr", "indicbert"] :
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model: {model_name}. Choose 'xlmr' or 'indicbert'"
         )
 
     try :
-        # Validate model name
-        valid_models = ["xlmr", "indicbert"]
-        if input_data.model not in valid_models :
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid model. Choose from: {valid_models}"
-            )
+        logger.info( f"Processing prediction with model: {model_name}" )
+        result = explainer.explain( data.text, model_name )
 
-        # Get explanation
-        explanation = explainer.explain( input_data.text, input_data.model )
-
-        # Map prediction to label if needed
-        prediction_label = explanation['prediction']
-        if isinstance( prediction_label, int ) :
-            # Assuming 0 = Real, 1 = Fake
-            prediction_label = "Fake" if prediction_label == 1 else "Real"
-
-        # Return response in expected format
         return {
-            "prediction" : prediction_label,
-            "confidence" : explanation['confidence'],
-            "method" : explanation['method'],
-            "tokens" : explanation.get( 'tokens', [] )
+            "label" : "Fake" if result["prediction"] == 1 else "Real",
+            "confidence" : result["confidence"],
+            "model" : model_name,
+            "explanations" : result["explanations"]
         }
 
     except Exception as e :
-        logger.error( f"Prediction error: {e}" )
-        raise HTTPException( status_code=500, detail=str( e ) )
+        logger.exception( "Prediction error occurred" )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed: {str( e )}"
+        )
 
 
-@app.post( "/batch_predict" )
-async def batch_predict ( texts: list[str], model: str = "xlmr" ) :
-    """Batch prediction endpoint"""
+@app.post( "/predict/ensemble", response_model=EnsemblePredictionResponse )
+def ensemble_predict ( data: InputText ) :
+    """
+    Predict using ensemble of both models
+
+    Args:
+        data: InputText containing text to analyze
+
+    Returns:
+        EnsemblePredictionResponse with combined prediction and individual model details
+    """
+    global explainer
+
+    # Ensure models are loaded
     if not models_loaded :
+        load_models()
+
+    if not explainer :
         raise HTTPException(
             status_code=503,
-            detail="Models not loaded"
+            detail="Models not loaded yet. Please try again in a few moments."
         )
 
-    # Validate model
-    valid_models = ["xlmr", "indicbert"]
-    if model not in valid_models :
+    # Validate input
+    if not data.text.strip() :
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid model. Choose from: {valid_models}"
+            detail="Text input cannot be empty"
         )
 
-    results = []
-    for text in texts :
-        try :
-            explanation = explainer.explain( text, model )
-            prediction_label = "Fake" if explanation['prediction'] == 1 else "Real"
-            results.append( {
-                "text" : text[:100] + "..." if len( text ) > 100 else text,
-                "prediction" : prediction_label,
-                "confidence" : explanation['confidence']
-            } )
-        except Exception as e :
-            results.append( {
-                "text" : text[:100] + "..." if len( text ) > 100 else text,
-                "error" : str( e )
-            } )
+    try :
+        logger.info( "Processing ensemble prediction" )
+        result = explainer.ensemble_explain( data.text )
 
-    return {"results" : results, "model_used" : model}
+        return {
+            "label" : "Fake" if result["prediction"] == 1 else "Real",
+            "confidence" : result["confidence"],
+            "method" : result["method"],
+            "details" : result.get( "details", {} )
+        }
+
+    except Exception as e :
+        logger.exception( "Ensemble prediction error occurred" )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ensemble prediction failed: {str( e )}"
+        )
 
 
-@app.get( "/models" )
-async def get_models_info () :
-    """Get information about available models"""
+@app.get( "/models/info" )
+def models_info () :
+    """Get information about loaded models"""
     return {
-        "models" : [
-            {
-                "name" : "xlmr",
-                "full_name" : "XLM-RoBERTa",
-                "description" : "Cross-lingual RoBERTa model trained on 100+ languages",
-                "strengths" : [
-                    "Excellent multilingual performance",
-                    "Strong on code-mixed content (Hinglish)",
-                    "Robust cross-lingual transfer"
-                ],
-                "languages" : "100+ including English, Hindi, and regional Indian languages"
+        "models_loaded" : models_loaded,
+        "available_models" : {
+            "xlmr" : {
+                "name" : "XLM-RoBERTa",
+                "description" : "Multilingual model for 100+ languages",
+                "best_for" : ["English", "European languages", "Code-mixed text"]
             },
-            {
-                "name" : "indicbert",
-                "full_name" : "IndicBERT",
-                "description" : "BERT model specialized for Indian languages",
-                "strengths" : [
-                    "Optimized for 12 major Indian languages",
-                    "Better performance on Hindi and regional content",
-                    "Trained on Indic language corpora"
-                ],
-                "languages" : "12 major Indian languages including Hindi, Bengali, Tamil, Telugu"
+            "indicbert" : {
+                "name" : "IndicBERT",
+                "description" : "Specialized model for Indian languages",
+                "best_for" : ["Hindi", "Tamil", "Telugu", "Other Indian languages"]
+            },
+            "ensemble" : {
+                "name" : "Ensemble",
+                "description" : "Combines both models for enhanced accuracy",
+                "best_for" : ["Maximum accuracy", "Uncertain language detection"]
             }
-        ],
-        "loaded" : models_loaded
+        },
+        "loading_error" : loading_error if loading_error else None
     }
 
 
+@app.post( "/validate" )
+def validate_text ( data: InputText ) :
+    """Validate text and detect language"""
+    if not data.text.strip() :
+        raise HTTPException( status_code=400, detail="Text cannot be empty" )
+
+    try :
+        detected_lang = detect( data.text )
+        recommended_model = auto_select_model( data.text )
+
+        return {
+            "text_length" : len( data.text ),
+            "word_count" : len( data.text.split() ),
+            "detected_language" : detected_lang,
+            "recommended_model" : recommended_model,
+            "valid" : True
+        }
+    except Exception as e :
+        return {
+            "text_length" : len( data.text ),
+            "word_count" : len( data.text.split() ),
+            "detected_language" : "unknown",
+            "recommended_model" : "xlmr",
+            "valid" : True,
+            "note" : "Language detection failed, defaulting to XLM-R"
+        }
+
+
+# --------------------------------------------------
+# Error Handlers
+# --------------------------------------------------
+@app.exception_handler( 404 )
+async def not_found_handler ( request, exc ) :
+    return {
+        "error" : "Endpoint not found",
+        "path" : request.url.path,
+        "available_endpoints" : [
+            "/",
+            "/health",
+            "/predict",
+            "/predict/ensemble",
+            "/models/info",
+            "/validate"
+        ]
+    }
+
+
+@app.exception_handler( 500 )
+async def internal_error_handler ( request, exc ) :
+    logger.exception( "Internal server error" )
+    return {
+        "error" : "Internal server error",
+        "detail" : "An unexpected error occurred. Please try again."
+    }
+
+
+# --------------------------------------------------
+# Main Entry Point
+# --------------------------------------------------
 if __name__ == "__main__" :
     import uvicorn
 
     uvicorn.run(
-        "main:app",
-        host=config.API_HOST,
-        port=config.API_PORT,
-        reload=True
+        "app.main:app",
+        host="0.0.0.0",
+        port=8001,
+        reload=True,
+        log_level="info"
     )

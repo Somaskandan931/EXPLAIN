@@ -11,7 +11,7 @@ import evaluate
 # ===== CONFIG =====
 MODEL_NAME = "ai4bharat/indic-bert"
 DATA_DIR = "/content/tokenized/indicbert"   # Colab
-OUTPUT_DIR = "./models/indicbert_lora"
+OUTPUT_DIR = "../../app/models/indicbert_lora"
 NUM_LABELS = 2
 
 # ===== METRIC =====

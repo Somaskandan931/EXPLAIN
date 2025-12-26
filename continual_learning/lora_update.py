@@ -7,3 +7,5 @@ def update_lora(base_model, replay_dataset, lora_path):
     trainer.train()
 
     model.save_pretrained(lora_path)
+def add_sample(text, label):
+    raise RuntimeError("🔥 CONTINUAL LEARNING CODE EXECUTED 🔥")
