@@ -295,9 +295,14 @@ def create_synthetic_dataset ( csv_path, output_path, target_size=10000 ) :
 
 # ===== USAGE =====
 if __name__ == "__main__" :
-    # Configure paths
-    INPUT_CSV = "C:/Users/somas/PycharmProjects/EXPLAIN/preprocessing/processed_data/combined_preprocessed.csv"
-    OUTPUT_CSV = "C:/Users/somas/PycharmProjects/EXPLAIN/preprocessing/processed_data/indicbert_synthetic.csv"
+    from pathlib import Path
+
+    # Paths are relative to the project root (where you run this script from)
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    PROCESSED_DATA = PROJECT_ROOT / "preprocessing" / "processed_data"
+
+    INPUT_CSV  = PROCESSED_DATA / "combined_preprocessed.csv"
+    OUTPUT_CSV = PROCESSED_DATA / "indicbert_synthetic.csv"
 
     # Generate synthetic data
     synthetic_df = create_synthetic_dataset(

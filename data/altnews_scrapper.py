@@ -6,12 +6,13 @@ from pymongo import MongoClient
 
 # MongoDB setup
 try:
-    client = MongoClient("mongodb://localhost:27017/")
+    client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+    client.admin.command("ping")          # verify connection is live
     db = client["fake_news_db"]
     collection = db["altnews_claims"]
-    print("MongoDB connected")
+    print("✅ MongoDB connected — fake_news_db/altnews_claims ready")
 except Exception as e:
-    print(f"MongoDB connection failed: {e}")
+    print(f"⚠️  MongoDB connection failed: {e} — data will NOT be saved")
     client = None
 
 BASE = "https://www.altnews.in"

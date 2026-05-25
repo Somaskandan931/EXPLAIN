@@ -10,12 +10,13 @@ COUNTRY_KEYWORD = "India"  # ensures India-specific news
 
 # MongoDB connection
 try:
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
+    client = pymongo.MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+    client.admin.command("ping")          # verify connection is live
     db = client["fake_news_db"]
     collection = db["news_articles"]
-    print("✅ MongoDB connected")
+    print("✅ MongoDB connected — fake_news_db/news_articles ready")
 except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
+    print(f"⚠️  MongoDB connection failed: {e} — data will NOT be saved")
     client = None
 
 DATA = []

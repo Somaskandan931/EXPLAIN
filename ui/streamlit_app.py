@@ -7,9 +7,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Configuration
-API_URL = "http://127.0.0.1:8001/predict"
-MONGODB_URI = "mongodb://localhost:27017/"
-NEWS_API_KEY = "59593215cd46458c9214ba33b88c2831"
+API_BASE  = "http://127.0.0.1:8000"
+API_URL   = f"{API_BASE}/predict"
+MONGODB_URI   = "mongodb://localhost:27017/"
+NEWS_API_KEY  = "59593215cd46458c9214ba33b88c2831"
 
 # Custom CSS for modern design
 st.markdown( """
@@ -225,7 +226,7 @@ with st.sidebar :
                      unsafe_allow_html=True )
 
     try :
-        response = requests.get( "http://localhost:8000/health", timeout=2 )
+        response = requests.get( f"{API_BASE}/health", timeout=2 )
         if response.status_code == 200 :
             st.markdown( '<span class="status-indicator status-online"></span>**API Online**', unsafe_allow_html=True )
         else :

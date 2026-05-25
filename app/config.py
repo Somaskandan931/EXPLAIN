@@ -3,21 +3,26 @@ from pathlib import Path
 import torch  # needed for DEVICE detection
 
 # =====================================================
-# Base paths (hardcoded)
+# Base paths  — derived from this file's location so
+# the project works on any machine / drive / user
 # =====================================================
-MODELS_DIR = Path(r"C:\Users\somas\PycharmProjects\EXPLAIN\app\models")
-DATA_DIR = Path(r"C:\Users\somas\PycharmProjects\EXPLAIN\data")
+# config.py lives at  <project_root>/app/config.py
+# so two .parent calls get us to <project_root>
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+APP_DIR      = PROJECT_ROOT / "app"
+MODELS_DIR   = APP_DIR / "models"
+DATA_DIR     = PROJECT_ROOT / "data"
 
 # =====================================================
 # Base models (can be HF ID or local folder)
 # =====================================================
-XLMR_BASE_MODEL = "xlm-roberta-base"  # HF ID
-INDICBERT_BASE_MODEL = Path(r"C:\Users\somas\PycharmProjects\EXPLAIN\app\models\Yousuf-Islam\indicBERTv2_Model_v2")  # local folder
+XLMR_BASE_MODEL      = "xlm-roberta-base"   # pulled from HuggingFace Hub
+INDICBERT_BASE_MODEL = MODELS_DIR / "Yousuf-Islam" / "indicBERTv2_Model_v2"  # local
 
 # =====================================================
 # LoRA adapter paths (optional)
 # =====================================================
-XLMR_MODEL_PATH = MODELS_DIR / "xlmr_lora"
+XLMR_MODEL_PATH      = MODELS_DIR / "xlmr_lora"
 INDICBERT_MODEL_PATH = MODELS_DIR / "indicbert_lora"
 
 # =====================================================
@@ -29,7 +34,7 @@ API_PORT = 8000
 # =====================================================
 # MongoDB Configuration
 # =====================================================
-MONGODB_URI = "mongodb://localhost:27017/"
+MONGODB_URI     = "mongodb://localhost:27017/"
 MONGODB_DB_NAME = "fake_news_db"
 
 # =====================================================
@@ -60,7 +65,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 def get_model_path(model):
     """
     Convert model config to string path if it's a Path object.
-    Keeps HF model IDs unchanged.
+    Keeps HF model IDs (strings) unchanged.
     """
     if isinstance(model, Path):
         return str(model.resolve())
