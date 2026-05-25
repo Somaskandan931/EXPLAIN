@@ -413,7 +413,7 @@ elif page == "📝 Manual Analysis" :
                     st.success( "✅ Analysis Complete!" )
 
                     # Display result
-                    prediction = result.get( "prediction", "Unknown" )
+                    prediction = result.get( "label", result.get( "prediction", "Unknown" ) )
                     confidence = result.get( "confidence", 0 )
 
                     if prediction == "Fake" :
@@ -517,7 +517,7 @@ elif page == "📰 Live News" :
                                     result = predict_news( content, model_for_analysis )
 
                                     if "error" not in result :
-                                        prediction = result.get( "prediction", "Unknown" )
+                                        prediction = result.get( "label", result.get( "prediction", "Unknown" ) )
                                         confidence = result.get( "confidence", 0 )
 
                                         if prediction == "Fake" :
@@ -593,7 +593,7 @@ elif page == "🗂️ Claims Database" :
                             if st.button( "🔍 Re-analyze", key=f"reanalyze_{claim.get( 'id' )}" ) :
                                 result = predict_news( claim.get( 'claim_text', '' ), "xlmr" )
                                 if "error" not in result :
-                                    st.metric( "AI Prediction", result.get( "prediction" ) )
+                                    st.metric( "AI Prediction", result.get( "label", result.get( "prediction", "Unknown" ) ) )
                                     st.metric( "Confidence", f"{result.get( 'confidence', 0 ):.1%}" )
             else :
                 st.warning( "📭 No claims in database" )
