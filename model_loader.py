@@ -14,6 +14,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# --------------------------------------------------
+# Helpers: detect checkpoint type
+# --------------------------------------------------
+
 def _is_full_model(path: Path) -> bool:
     """Return True if the directory contains a full HuggingFace model (not a LoRA adapter)."""
     has_weights = (path / "pytorch_model.bin").exists() or any(path.glob("model*.safetensors"))
@@ -53,6 +57,50 @@ class ModelLoader:
              if d.is_dir() and d.name.startswith("checkpoint-")]
         )
         return checkpoints[-1] if checkpoints else None
+
+    # --------------------------------------------------
+    # Tokenizer loader with robust fallback chain
+    #
+    # Problem: some HF checkpoints (e.g. hamzb/roberta-fake-news-classification)
+    # declare "tokenizer_class": "XLMTokenizer" in tokenizer_config.json even
+    # though the vocab/merges are RoBERTa-style.  XLMTokenizer needs the optional
+    # `sacremoses` package; the fast tokenizer sidesteps it entirely.
+    #
+    # Fallback chain:
+    #   AutoTokenizer(src, use_fast=True)
+    #       ↓ ImportError / OSError (e.g. no sacremoses)
+    #   XLMRobertaTokenizerFast.from_pretrained(src)
+    #       ↓ still fails (corrupt checkpoint)
+    #   AutoTokenizer(base_model_name, use_fast=True)   [only if src ≠ base]
+    # --------------------------------------------------
+    @staticmethod
+    def _try_load_tokenizer(src: str):
+        """Try AutoTokenizer first; fall back to XLMRobertaTokenizerFast."""
+        try:
+            return AutoTokenizer.from_pretrained(src, use_fast=True)
+        except (ImportError, OSError) as e:
+            logger.warning(
+                f"AutoTokenizer failed for '{src}' ({e}); "
+                "retrying with XLMRobertaTokenizerFast directly."
+            )
+            return XLMRobertaTokenizerFast.from_pretrained(src)
+
+    def _load_tokenizer(self, tokenizer_src: str, base_model_name: str):
+        """
+        Load tokenizer with a two-level fallback:
+          1. Try tokenizer_src (checkpoint or base model)
+          2. If that fails AND src != base_model_name, fall back to base model
+        """
+        try:
+            return self._try_load_tokenizer(tokenizer_src)
+        except Exception as e:
+            if tokenizer_src != str(base_model_name):
+                logger.warning(
+                    f"Tokenizer load failed from '{tokenizer_src}' ({e}); "
+                    f"falling back to base model tokenizer: {base_model_name}"
+                )
+                return self._try_load_tokenizer(str(base_model_name))
+            raise
 
     # --------------------------------------------------
     # Core loader — handles full model OR LoRA adapter
@@ -106,43 +154,17 @@ class ModelLoader:
                     else:
                         logger.warning(f"No checkpoints found in {lora_path} — using base model only.")
 
-            logger.info(f"Checkpoint type detected: {checkpoint_type}"
-                        + (f" at {checkpoint_dir}" if checkpoint_dir else ""))
+            logger.info(
+                f"Checkpoint type detected: {checkpoint_type}"
+                + (f" at {checkpoint_dir}" if checkpoint_dir else "")
+            )
 
             # --------------------------------------------------
-            # Step 2: Load tokenizer  (with legacy-class fallback)
+            # Step 2: Load tokenizer with robust fallback chain
             # --------------------------------------------------
-            # Some HuggingFace checkpoints (e.g. hamzb/roberta-fake-news-classification)
-            # ship a tokenizer_config.json that declares "tokenizer_class": "XLMTokenizer"
-            # even though the actual vocab/merges are RoBERTa-style.  XLMTokenizer
-            # requires the optional `sacremoses` package; if that import fails we:
-            #   1. Try again with use_fast=True (loads XLMRobertaTokenizerFast directly)
-            #   2. If the checkpoint src itself fails, fall back to base_model_name
             tokenizer_src = str(checkpoint_dir) if checkpoint_dir else str(base_model_name)
             logger.info(f"Loading tokenizer from: {tokenizer_src}")
-
-            def _load_tokenizer(src: str):
-                """Try AutoTokenizer first; fall back to XLMRobertaTokenizerFast."""
-                try:
-                    return AutoTokenizer.from_pretrained(src, use_fast=True)
-                except (ImportError, OSError) as e:
-                    logger.warning(
-                        f"AutoTokenizer failed for '{src}' ({e}); "
-                        "retrying with XLMRobertaTokenizerFast directly."
-                    )
-                    return XLMRobertaTokenizerFast.from_pretrained(src)
-
-            try:
-                tokenizer = _load_tokenizer(tokenizer_src)
-            except Exception as e:
-                if tokenizer_src != str(base_model_name):
-                    logger.warning(
-                        f"Tokenizer load failed from checkpoint '{tokenizer_src}' ({e}); "
-                        f"falling back to base model tokenizer: {base_model_name}"
-                    )
-                    tokenizer = _load_tokenizer(str(base_model_name))
-                else:
-                    raise
+            tokenizer = self._load_tokenizer(tokenizer_src, str(base_model_name))
 
             # --------------------------------------------------
             # Step 3: Load model weights
@@ -215,7 +237,7 @@ class ModelLoader:
     # --------------------------------------------------
     def load_indicbert_model(self):
         return self._load_model(
-            base_model_name=self.config.INDICBERT_BASE_MODEL,
+            base_model_name=str(self.config.INDICBERT_BASE_MODEL),  # resolve Path → str
             lora_path=Path(self.config.INDICBERT_MODEL_PATH),
             num_labels=None,    # auto-detect from checkpoint or base config
             fix_mistral_regex=True,

@@ -1,41 +1,64 @@
-# Core ML/DL
+# =====================================================
+# Core ML / Deep Learning
+# =====================================================
 torch
 transformers
 peft
 accelerate
-tokenizers # pinned for IndicBERT + Windows
+tokenizers
 
+# Fast tokenizer fallback — avoids needing sacremoses for
+# RoBERTa-style checkpoints that mis-declare "XLMTokenizer"
+# in their tokenizer_config.json.
+sentencepiece          # needed by some IndicBERT tokeniser paths
+
+# =====================================================
 # API
+# =====================================================
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 
+# =====================================================
 # UI
+# =====================================================
 streamlit
 plotly
 matplotlib
 seaborn
 
+# =====================================================
 # Explainability
+# =====================================================
 captum
+shap
 
+# =====================================================
 # Data & Storage
+# =====================================================
 pandas
 numpy
 pymongo
 
+# =====================================================
 # News & Web
+# =====================================================
 requests
 beautifulsoup4
 
+# =====================================================
 # Utils
+# =====================================================
 python-dotenv
 scikit-learn
 langdetect
 python-dateutil
 tqdm
 datasets
-fasttext-wheel
-shap
 huggingface-hub
 
+# NOTE: sacremoses is intentionally omitted.
+# The tokenizer fallback chain in model_loader.py uses
+# XLMRobertaTokenizerFast directly, which does not need it.
+# If you ever add a model that genuinely requires the slow
+# XLM tokenizer, install sacremoses separately.
