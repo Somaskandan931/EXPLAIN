@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import logging
@@ -100,12 +101,11 @@ def load_models () :
         try :
             logger.info( "🚀 Background ML model loading started..." )
 
-            # Check if model files exist
+            # Check if LoRA adapter files exist (optional — base models still load without them)
             files_exist, message = check_model_files( config )
             if not files_exist :
-                loading_error = message
-                logger.error( f"❌ {message}" )
-                return
+                logger.warning( f"⚠️ {message}" )
+                logger.warning( "Continuing with base models only (LoRA adapters not found)." )
 
             # Load models
             loader = ModelLoader( config )
@@ -362,28 +362,34 @@ def validate_text ( data: InputText ) :
 # Error Handlers
 # --------------------------------------------------
 @app.exception_handler( 404 )
-async def not_found_handler ( request, exc ) :
-    return {
-        "error" : "Endpoint not found",
-        "path" : request.url.path,
-        "available_endpoints" : [
-            "/",
-            "/health",
-            "/predict",
-            "/predict/ensemble",
-            "/models/info",
-            "/validate"
-        ]
-    }
+async def not_found_handler ( request: Request, exc ) :
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error" : "Endpoint not found",
+            "path" : request.url.path,
+            "available_endpoints" : [
+                "/",
+                "/health",
+                "/predict",
+                "/predict/ensemble",
+                "/models/info",
+                "/validate"
+            ]
+        }
+    )
 
 
 @app.exception_handler( 500 )
-async def internal_error_handler ( request, exc ) :
+async def internal_error_handler ( request: Request, exc ) :
     logger.exception( "Internal server error" )
-    return {
-        "error" : "Internal server error",
-        "detail" : "An unexpected error occurred. Please try again."
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error" : "Internal server error",
+            "detail" : "An unexpected error occurred. Please try again."
+        }
+    )
 
 
 # --------------------------------------------------
